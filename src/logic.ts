@@ -1,0 +1,116 @@
+import { addEnsContracts, ensPublicActions } from '@ensdomains/ensjs'
+import { createPublicClient, http } from 'viem'
+import { mainnet } from 'viem/chains'
+
+const client = createPublicClient({
+  chain: addEnsContracts(mainnet),
+  transport: http(
+    process.env.ETH_RPC_URL || 'https://rpc.gregskril.com/eth/greg'
+  ),
+}).extend(ensPublicActions)
+
+export async function handleRequest(req: Request) {
+  const path = new URL(req.url).pathname
+  const [, name, ...rest] = path.split('/')
+  const restPath = rest.join('/')
+
+  if (!name) {
+    return new Response('Name not found', { status: 404 })
+  }
+
+  const ipfsUrl = await buildIpfsUrl(name, restPath)
+
+  if (!ipfsUrl) {
+    return new Response(
+      'Contenthash record is set but failed to fetch content',
+      { status: 500 }
+    )
+  }
+
+  const res = await fetch(ipfsUrl)
+
+  if (!res.ok) {
+    return new Response(
+      'Contenthash record is set but failed to fetch content',
+      { status: 500 }
+    )
+  }
+
+  const contentType =
+    res.headers.get('Content-Type') || 'application/octet-stream'
+
+  // Rewrite relative URLs in HTML
+  if (contentType.includes('text/html')) {
+    const html = formatHtml(await res.text(), name, restPath)
+
+    return new Response(html, {
+      status: 200,
+      headers: {
+        'Content-Type': contentType,
+      },
+    })
+  }
+
+  return new Response(res.body, {
+    status: 200,
+    headers: {
+      'Content-Type': contentType,
+    },
+  })
+}
+
+export async function buildIpfsUrl(
+  name: string,
+  restPath: string
+): Promise<string | null> {
+  const contenthash = await client
+    .getContentHashRecord({ name })
+    .catch(() => null)
+
+  if (!contenthash) {
+    return null
+  }
+
+  const gatewayBase = process.env.IPFS_GATEWAY_URL || 'https://ipfs.io'
+  const gateway = `${gatewayBase}/ipfs/${contenthash.decoded}`
+  return `${gateway}/${restPath}`
+}
+
+export function formatHtml(
+  html: string,
+  name: string,
+  restPath: string
+): string {
+  // Rewrite href and src attributes
+  return html.replace(
+    /((?:href|src)\s*=\s*["'])([^"']+)(["'])/gi,
+    (match, prefix, url, suffix) => {
+      // Inline resolveUrl logic here
+      // Skip absolute URLs
+      if (
+        url.match(/^https?:\/\//) ||
+        url.match(/^\/\//) ||
+        url.match(/^data:/) ||
+        url.match(/^mailto:/) ||
+        url.startsWith('#')
+      ) {
+        return `${prefix}${url}${suffix}`
+      }
+
+      // If it starts with /, it's root-relative (relative to IPFS root)
+      if (url.startsWith('/')) {
+        return `${prefix}/${name}${url}${suffix}`
+      }
+
+      // Otherwise it's a relative path - resolve it relative to current page's directory
+      const currentDir = restPath.includes('/')
+        ? restPath.substring(0, restPath.lastIndexOf('/') + 1)
+        : ''
+
+      const resolved = new URL(url, `http://dummy/${currentDir}`).pathname
+
+      // Add the ENS name prefix
+      return `${prefix}/${name}${resolved}${suffix}`
+    }
+  )
+}

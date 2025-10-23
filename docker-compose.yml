@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  dweb-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '3000:3000'
+    restart: unless-stopped
+    environment:
+      - ETH_RPC_URL=${ETH_RPC_URL}
+      - IPFS_GATEWAY_URL=${IPFS_GATEWAY_URL}
