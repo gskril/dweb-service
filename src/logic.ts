@@ -1,12 +1,11 @@
 import { addEnsContracts, ensPublicActions } from '@ensdomains/ensjs'
 import { createPublicClient, http } from 'viem'
 import { mainnet } from 'viem/chains'
+import { env } from './env'
 
 const client = createPublicClient({
   chain: addEnsContracts(mainnet),
-  transport: http(
-    process.env.ETH_RPC_URL || 'https://rpc.gregskril.com/eth/greg'
-  ),
+  transport: http(env.ETH_RPC_URL),
 }).extend(ensPublicActions)
 
 export async function handleRequest(req: Request) {
@@ -71,7 +70,7 @@ export async function buildIpfsUrl(
     return null
   }
 
-  const gatewayBase = process.env.IPFS_GATEWAY_URL || 'https://ipfs.io'
+  const gatewayBase = env.IPFS_GATEWAY_URL
   const gateway = `${gatewayBase}/ipfs/${contenthash.decoded}`
   return `${gateway}/${restPath}`
 }
