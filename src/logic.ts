@@ -17,6 +17,18 @@ export async function handleRequest(req: Request) {
     return new Response('Name not found', { status: 404 })
   }
 
+  // Handle raw /ipfs/[cid] requests
+  let basePath = name
+  let ipfsPath = restPath
+  if (name === 'ipfs' && rest.length > 0) {
+    // For /ipfs/[cid]/path/to/file, we need:
+    // - basePath = 'ipfs/[cid]'
+    // - ipfsPath = 'path/to/file'
+    const [cid, ...remainingPath] = rest
+    basePath = `ipfs/${cid}`
+    ipfsPath = remainingPath.join('/')
+  }
+
   const ipfsUrl = await buildIpfsUrl(name, restPath)
 
   if (!ipfsUrl) {
@@ -40,7 +52,7 @@ export async function handleRequest(req: Request) {
 
   // Rewrite relative URLs in HTML
   if (contentType.includes('text/html')) {
-    const html = formatHtml(await res.text(), name, restPath)
+    const html = formatHtml(await res.text(), basePath, ipfsPath)
 
     return new Response(html, {
       status: 200,
@@ -62,6 +74,10 @@ export async function buildIpfsUrl(
   name: string,
   restPath: string
 ): Promise<string | null> {
+  if (name === 'ipfs') {
+    return `${env.IPFS_GATEWAY_URL}/ipfs/${restPath}`
+  }
+
   const contenthash = await client
     .getContentHashRecord({ name })
     .catch(() => null)
@@ -77,8 +93,8 @@ export async function buildIpfsUrl(
 
 export function formatHtml(
   html: string,
-  name: string,
-  restPath: string
+  basePath: string,
+  currentPath: string
 ): string {
   // Rewrite href and src attributes
   return html.replace(
@@ -98,18 +114,18 @@ export function formatHtml(
 
       // If it starts with /, it's root-relative (relative to IPFS root)
       if (url.startsWith('/')) {
-        return `${prefix}/${name}${url}${suffix}`
+        return `${prefix}/${basePath}${url}${suffix}`
       }
 
       // Otherwise it's a relative path - resolve it relative to current page's directory
-      const currentDir = restPath.includes('/')
-        ? restPath.substring(0, restPath.lastIndexOf('/') + 1)
+      const currentDir = currentPath.includes('/')
+        ? currentPath.substring(0, currentPath.lastIndexOf('/') + 1)
         : ''
 
       const resolved = new URL(url, `http://dummy/${currentDir}`).pathname
 
-      // Add the ENS name prefix
-      return `${prefix}/${name}${resolved}${suffix}`
+      // Add the base path prefix (either ENS name or ipfs/[cid])
+      return `${prefix}/${basePath}${resolved}${suffix}`
     }
   )
 }
