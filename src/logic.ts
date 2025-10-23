@@ -32,10 +32,9 @@ export async function handleRequest(req: Request) {
   const ipfsUrl = await buildIpfsUrl(name, restPath)
 
   if (!ipfsUrl) {
-    return new Response(
-      'Contenthash record is set but failed to fetch content',
-      { status: 500 }
-    )
+    return new Response('Contenthash record is not set for this name', {
+      status: 500,
+    })
   }
 
   const res = await fetch(ipfsUrl)
